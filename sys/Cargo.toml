@@ -1,0 +1,12 @@
+[package]
+name = "nue_sys"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nfc1 = {version = "0.5.2",  features = ["driver_pn532_uart", "vendored"]}
+nue_model = { path = "../model" }
+
+[[example]]
+name = "basic"
+path = "../examples/basic.rs"

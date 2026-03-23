@@ -1,0 +1,14 @@
+[package]
+name = "nue_cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+inquire = { version = "0.7" }
+colored = { version = "2" }
+nue_sys = { path = "../sys" }
+
+
+[[example]]
+name = "cli"
+path = "../examples/cli.rs"
