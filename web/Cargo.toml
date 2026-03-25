@@ -4,3 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+nue_model = { path = "../model", features = ["extras"] }
+nue_storage = { path = "../storage", features = ["sqlite"] }

@@ -1,62 +1,130 @@
 mod consts;
-mod iter;
+pub mod iter;
 
-use core::{error::Error, fmt};
+use core::fmt;
 
-use crate::iter::Incoming;
-//re export.
+use nfc1::target_info::TargetInfo;
+
+//re-exports.
+pub use crate::iter::Incoming;
 pub use nue_model::{
     auth::Token,
-    card::{CardID, NfcCard},
+    raw_card::{CardID, RawCard},
 };
 
 pub struct App<'a> {
-    pub device: nfc1::Device<'a>,
+    pub(crate) device: nfc1::Device<'a>,
 }
 
 impl<'a> App<'a> {
-    pub fn new(mut device: nfc1::Device<'a>) -> Result<Self, Box<dyn Error + 'static>> {
+    pub fn new(mut device: nfc1::Device<'a>) -> nfc1::Result<Self> {
         device.initiator_init()?;
         Ok(Self { device: device })
     }
 
-    pub fn uart(ctx: &'a mut nfc1::Context) -> Result<Self, Box<dyn Error + 'static>> {
+    /// Opens an NFC device using the UART connection string `pn532_uart:/dev/ttyS0:115200`.
+    pub fn uart(ctx: &'a mut nfc1::Context) -> nfc1::Result<Self> {
+        // TODO: Make this configurable.
         Self::new(ctx.open_with_connstring("pn532_uart:/dev/ttyS0:115200")?)
     }
 
-    pub fn context<'ctx>() -> Result<nfc1::Context<'ctx>, Box<dyn Error + 'static>> {
-        nfc1::Context::new().map_err(|e| e.into())
+    /// Creates a new `nfc1::Context`.
+    #[inline]
+    pub fn context() -> nfc1::Result<nfc1::Context<'a>> {
+        nfc1::Context::new()
     }
 
+    #[inline]
     pub fn device_name(&mut self) -> &str {
         self.device.name()
     }
 
-    fn write_page(&mut self, page: u8, data: &[u8; 4]) -> nfc1::Result<()> {
-        debug_assert!(
-            page <= consts::USER_PAGE_END,
-            "page {:#X} is outside NTAG215 user memory",
-            page
-        );
-
-        let cmd = [consts::WRITE_CMD, page, data[0], data[1], data[2], data[3]];
+    /// Consumes `self` and returns the underlying `nfc1::Device`.
+    #[inline]
+    pub fn into_device(self) -> nfc1::Device<'a> {
         self.device
-            .initiator_transceive_bytes(&cmd, 1, nfc1::Timeout::Default)?;
-        Ok(())
     }
 
-    pub fn write(&mut self, card: &NfcCard) -> nfc1::Result<()> {
-        let mut padded = [0u8; consts::PADDED_SIZE];
-        padded[..consts::CARD_SIZE].copy_from_slice(card.as_slice());
+    /// Returns a mutable reference to the underlying `nfc1::Device`.
+    #[inline]
+    pub const fn device(&'a mut self) -> &'a mut nfc1::Device<'a> {
+        &mut self.device
+    }
 
-        for (i, chunk) in padded.chunks_exact(consts::PAGE_SIZE).enumerate() {
-            let page = consts::USER_PAGE_START + i as u8;
-            self.write_page(page, chunk.try_into().unwrap())?;
+    /// Returns an iterator over incoming cards.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use nue_sys::App;
+    ///
+    /// let mut ctx = App::context()?;
+    /// let mut app = App::uart(&mut ctx)?;
+    ///
+    /// for card in app.incoming() {
+    ///     ...
+    /// }
+    /// ```
+    #[inline]
+    #[must_use = "Iterators are lazy and do nothing unless consumed."]
+    pub fn incoming(&mut self) -> Incoming<'a, '_> {
+        Incoming(self)
+    }
+
+    /// Polls for a single target once, returning the card ID and raw card data if found.
+    ///
+    /// This function does not block and wait for a card to be found. If you want to achieve that behavior,
+    /// you should call this function in a loop until it returns `Ok((_, _))`, Or use [`App::incoming`] instead.
+    ///
+    /// You can pass a specific modulation to use, or `None` to use the default modulation.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use nue_sys::App;
+    ///
+    /// let mut ctx = App::context()?;
+    /// let mut app = App::uart(&mut ctx)?;
+    ///
+    /// if let Ok((card_id, raw_card)) = app.poll_once(None) {
+    ///     println!("Card ID: {:?}, Raw Card: {:?}", card_id, raw_card);
+    /// }
+    /// ```
+    pub fn poll_once(
+        &mut self,
+        modulation: Option<nfc1::Modulation>,
+    ) -> nue_model::Result<(CardID, RawCard)> {
+        let modulation = if let Some(modulation) = modulation {
+            modulation
+        } else {
+            consts::MODULATIONS[0]
+        };
+
+        // Scan for a card.
+        let target = self
+            .device
+            .initiator_select_passive_target(&modulation)
+            .map_err(|_| nue_model::Error::NfcReadError)?;
+
+        // Extract the UID from the target info, currently only ISO14443a is supported.
+        let uid = match target.target_info {
+            TargetInfo::Iso14443a(iso) => iso.uid,
+            _ => return Err(nue_model::Error::NfcCardUnrecognized),
+        };
+
+        if let Ok(card) = self.read() {
+            self.device
+                .initiator_deselect_target()
+                .map_err(|_| nue_model::Error::NfcReadError)?;
+            return Ok((uid.into(), card));
         }
-        Ok(())
+
+        Err(nue_model::Error::NfcReadError)
     }
 
-    pub fn read(&mut self) -> nfc1::Result<NfcCard> {
+    // TODO: Probably needs a re-write.
+    /// Read the raw bytes inside the card from the NFC device, turning it into a [`RawCard`].
+    pub fn read(&mut self) -> nfc1::Result<RawCard> {
         let mut rx = [0u8; consts::RX_BUF_SIZE];
 
         for i in 0..consts::READS_NEEDED {
@@ -70,20 +138,34 @@ impl<'a> App<'a> {
             rx[i * 16..(i + 1) * 16].copy_from_slice(&chunk);
         }
 
-        let card = NfcCard::from_bytes(&rx[..consts::CARD_SIZE]).ok_or(nfc1::Error::Soft)?;
+        let card = RawCard::from_bytes(&rx[..consts::CARD_SIZE]).ok_or(nfc1::Error::Soft)?;
         Ok(*card)
     }
 
-    pub fn into_device(self) -> nfc1::Device<'a> {
+    // TODO: Probably needs a re-write.
+    fn write_page(&mut self, page: u8, data: &[u8; 4]) -> nfc1::Result<()> {
+        debug_assert!(
+            page <= consts::USER_PAGE_END,
+            "page {:#X} is outside NTAG215 user memory",
+            page
+        );
+
+        let cmd = [consts::WRITE_CMD, page, data[0], data[1], data[2], data[3]];
         self.device
+            .initiator_transceive_bytes(&cmd, 1, nfc1::Timeout::Default)?;
+        Ok(())
     }
 
-    pub const fn device(&'a mut self) -> &'a mut nfc1::Device<'a> {
-        &mut self.device
-    }
+    // TODO: Probably needs a re-write.
+    pub fn write(&mut self, card: &RawCard) -> nfc1::Result<()> {
+        let mut padded = [0u8; consts::PADDED_SIZE];
+        padded[..consts::CARD_SIZE].copy_from_slice(card.as_slice());
 
-    pub fn incoming(&mut self) -> Incoming<'a, '_> {
-        Incoming(self)
+        for (i, chunk) in padded.chunks_exact(consts::PAGE_SIZE).enumerate() {
+            let page = consts::USER_PAGE_START + i as u8;
+            self.write_page(page, chunk.try_into().unwrap())?;
+        }
+        Ok(())
     }
 }
 
@@ -92,5 +174,18 @@ impl fmt::Debug for App<'_> {
         f.debug_struct("App")
             .field("device", &core::ptr::addr_of!(self.device))
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_write_and_read() -> nfc1::Result<()> {
+        let mut ctx = App::context()?;
+        let app = App::uart(&mut ctx)?;
+        dbg!(app);
+        Ok(())
     }
 }

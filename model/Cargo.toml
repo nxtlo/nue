@@ -7,3 +7,10 @@ edition = "2024"
 zerocopy = { version = "0.7", default-features = false, features = ["derive"] }
 getrandom = { version = "*", default-features = false, features = ["sys_rng"] }
 chacha20poly1305  = { version = "0.11.0-rc.3", default-features = false, features = ["alloc"] }
+
+# extras
+chrono = { version = "0.4", default-features = false, features = ["alloc", "serde"], optional = true }
+serde = { version = "1.0", default-features = false, features = ["derive", "rc"], optional = true }
+
+[features]
+extras = ["chrono", "serde"]

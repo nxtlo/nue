@@ -2,7 +2,7 @@
 use colored::Colorize;
 use inquire::{Confirm, Select, Text};
 
-use nue_sys::{App, CardID, NfcCard, Token};
+use nue_sys::{App, CardID, RawCard, Token};
 
 #[derive(Debug)]
 enum Action {
@@ -30,7 +30,7 @@ fn print_banner() {
     println!();
 }
 
-fn print_card(_card: &NfcCard, id: &CardID) {
+fn print_card(_card: &RawCard, id: &CardID) {
     println!(
         "  {} {}",
         "Card ID:".dimmed(),
@@ -76,7 +76,7 @@ fn run_write(app: &mut App) {
     println!("\n  {}", "Tap card to write...".dimmed());
 
     match app.incoming().next() {
-        Some(Ok((id, _))) => match app.write(&NfcCard::new(dummy_token)) {
+        Some(Ok((id, _))) => match app.write(&RawCard::new(dummy_token)) {
             Ok(_) => {
                 println!(
                     "\n  {} written to {}\n",

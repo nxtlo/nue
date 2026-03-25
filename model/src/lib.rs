@@ -11,7 +11,12 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
-pub mod auth;
-pub mod card;
 pub mod error;
-pub mod utils;
+pub mod raw;
+pub(crate) mod utils;
+
+pub use error::{Error, Result};
+pub use raw::{auth, card as raw_card};
+
+#[cfg(feature = "extras")]
+pub mod card;

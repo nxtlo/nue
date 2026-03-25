@@ -15,7 +15,7 @@
 #[cfg(test)]
 extern crate std;
 
-#[cfg(feature = "alloc")]
+#[cfg(any(feature = "alloc", feature = "sqlite"))]
 extern crate alloc;
 
 #[cfg(feature = "alloc")]
@@ -28,16 +28,16 @@ pub mod memory;
 /// SQLite storage implementation.
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
+#[cfg(feature = "sqlite")]
+pub(crate) static SCHEMA: &str = include_str!("../../lib/schema.sql");
 
 /// An LMDB storage implementation. works in no_std environments.
 pub mod lmdb;
 use core::borrow::Borrow;
-use nue_model::{card::NfcCard, error::Result};
-
-#[cfg(feature = "sqlite")]
-pub(crate) static SCHEMA: &str = include_str!("../../lib/schema.sql");
+use nue_model::{error::Result, raw_card::RawCard};
 
 /// A trait for storage backends that can store NFC cards.
+// TODO: Split this into Storage and RawStorage, corrosponding to NfcCard and RawCard respectively.
 pub trait Storage {
     /// The type of the list of card IDs returned by [`list`].
     type List;
@@ -45,9 +45,9 @@ pub trait Storage {
     /// can be any type that can be borrowed as a slice of u8.
     type CardID: ?Sized + Borrow<[u8]>;
 
-    fn get(&self, card_id: &Self::CardID) -> Result<Option<NfcCard>>;
-    fn put(&mut self, card_id: &Self::CardID, credential: NfcCard) -> Result<()>;
-    fn update(&mut self, card_id: &Self::CardID, new: NfcCard) -> Result<()>;
+    fn get(&self, card_id: &Self::CardID) -> Result<Option<RawCard>>;
+    fn put(&mut self, card_id: &Self::CardID, credential: RawCard) -> Result<()>;
+    fn update(&mut self, card_id: &Self::CardID, new: RawCard) -> Result<()>;
     fn delete(&mut self, card_id: &Self::CardID) -> Result<()>;
     fn count(&self) -> Result<usize>;
     fn list(&self) -> Result<Self::List>;

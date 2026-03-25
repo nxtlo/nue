@@ -1,15 +1,16 @@
-use core::error::Error;
 use core::fmt::Debug;
-use core::time::Duration;
 
 use crate::App;
 use crate::consts;
-use nue_model::{card::CardID, card::NfcCard};
+use nue_model::raw_card::{CardID, RawCard};
+use nue_model::{Error, Result};
 
 use nfc1::{Target, target_info::TargetInfo};
 
+#[must_use = "Iterators are lazy and do nothing unless consumed."]
 pub struct Incoming<'a, 'b>(pub(crate) &'b mut App<'a>);
 
+// App is not `Debug`.
 impl Debug for Incoming<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.pad("Incoming")
@@ -17,32 +18,34 @@ impl Debug for Incoming<'_, '_> {
 }
 
 impl<'a, 'b> Iterator for Incoming<'a, 'b> {
-    type Item = Result<(CardID, NfcCard), Box<dyn Error>>;
+    type Item = Result<(CardID, RawCard)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let target = match self.0.device.initiator_poll_target(
-            consts::MODULATIONS,
-            20,
-            Duration::from_millis(300),
-        ) {
-            Ok(Target { target_info, .. }) => {
-                let TargetInfo::Iso14443a(inner) = target_info else {
-                    return None;
-                };
-                inner.uid
-            }
-            Err(e) => return Some(Err(e.into())),
+        let uid =
+            match self
+                .0
+                .device
+                .initiator_poll_target(consts::MODULATIONS, 20, consts::POLL_MS)
+            {
+                // TODO: Handle the rest of the modulations, too lazy currently.
+                // Also impl From<nfc1::Error> for nue_model::Error
+                Ok(Target { target_info, .. }) => {
+                    let TargetInfo::Iso14443a(inner) = target_info else {
+                        return Some(Err(Error::NfcCardUnrecognized));
+                    };
+                    inner.uid
+                }
+                Err(_) => return Some(Err(Error::NfcCardUnrecognized)),
+            };
+
+        let Ok(raw_card) = self.0.read().map_err(|_| Error::NfcReadError) else {
+            return Some(Err(Error::NfcReadError));
         };
 
-        let card = match self.0.read() {
-            Ok(c) => c,
-            Err(e) => return Some(Err(e.into())),
-        };
-
-        if let Err(e) = self.0.device.initiator_deselect_target() {
-            return Some(Err(e.into()));
+        if let Ok(_) = self.0.device.initiator_deselect_target() {
+            return Some(Ok((uid.into(), raw_card)));
         }
 
-        Some(Ok((CardID(target), card)))
+        None
     }
 }

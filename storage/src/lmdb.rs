@@ -1,5 +1,5 @@
 use heed::{Database, Env, EnvOpenOptions, WithTls, types};
-use nue_model::{card::NfcCard, error::Error};
+use nue_model::{error::Error, raw_card::RawCard};
 
 #[cfg(feature = "alloc")]
 use alloc::collections::BTreeSet;
@@ -19,7 +19,7 @@ impl LmdbStorage {
 
         let env = unsafe {
             EnvOpenOptions::new()
-                .max_dbs(32)
+                .max_dbs(1)
                 .map_size(MAP_SIZE)
                 .open(path)
                 .expect("open env failure.")
@@ -56,16 +56,16 @@ impl Storage for LmdbStorage {
     #[cfg(not(feature = "alloc"))]
     type List = ();
 
-    fn get(&self, card_id: &Self::CardID) -> crate::Result<Option<NfcCard>> {
+    fn get(&self, card_id: &Self::CardID) -> crate::Result<Option<RawCard>> {
         let reader = self.reader();
         if let Some(data) = self.db.get(&reader, card_id.borrow()).transpose() {
-            Ok(NfcCard::from_bytes(data.map_err(|_| Error::CardNotFound)?).copied())
+            Ok(RawCard::from_bytes(data.map_err(|_| Error::CardNotFound)?).copied())
         } else {
             Ok(None)
         }
     }
 
-    fn put(&mut self, card_id: &Self::CardID, credential: NfcCard) -> crate::Result<()> {
+    fn put(&mut self, card_id: &Self::CardID, credential: RawCard) -> crate::Result<()> {
         let mut writer = self.writer();
         self.db
             .put(&mut writer, card_id.borrow(), credential.as_slice())
@@ -74,7 +74,7 @@ impl Storage for LmdbStorage {
         Ok(())
     }
 
-    fn update(&mut self, card_id: &Self::CardID, new: NfcCard) -> crate::Result<()> {
+    fn update(&mut self, card_id: &Self::CardID, new: RawCard) -> crate::Result<()> {
         let mut writer = self.writer();
         self.db
             .put(&mut writer, card_id.borrow(), new.as_slice())
@@ -116,10 +116,20 @@ impl Storage for LmdbStorage {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::dbg;
+impl Drop for LmdbStorage {
+    fn drop(&mut self) {
+        let mut writer = self.writer();
+        let _ = self
+            .db
+            .clear(&mut writer)
+            .and_then(move |()| writer.commit());
+    }
+}
 
-    use nue_model::{auth::Token, card::NfcCard};
+#[cfg(test)]
+mod tests {
+
+    use nue_model::{auth::Token, raw_card::RawCard};
 
     use super::LmdbStorage;
     use crate::Result;
@@ -127,10 +137,12 @@ mod tests {
 
     #[test]
     fn test_put_and_get() -> Result<()> {
-        let mut storage = LmdbStorage::new("/srv/db");
-        let card = NfcCard::new(Token::default());
+        let mut storage = LmdbStorage::new("/srv/db/test");
+        let card = RawCard::new(Token::default());
         let uid = [0u8; 10];
         storage.put(&uid, card.clone())?;
+        let result = storage.get(&uid).map(|r| r.unwrap())?;
+        assert_eq!(card.as_slice(), result.as_slice());
         Ok(())
     }
 }

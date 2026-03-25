@@ -7,3 +7,10 @@ members = [
     "cli",
 ]
 resolver = "2"
+
+[profile.dev]
+opt-level = 1               # Use slightly better optimizations.
+overflow-checks = false     # Disable integer overflow checks.
+
+[profile.release]
+lto = true

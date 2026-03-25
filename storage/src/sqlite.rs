@@ -1,7 +1,11 @@
+extern crate alloc;
+
+use alloc::string::String;
 use rusqlite::{Connection, Result};
 
-use crate::Storage;
-use nue_model::{CardID, NfcCard};
+use alloc::vec::Vec;
+use core::borrow::Borrow;
+use nue_model::{card::*, raw_card::CardID};
 
 #[derive(Debug)]
 pub struct SqliteStorage {
@@ -9,7 +13,11 @@ pub struct SqliteStorage {
 }
 
 impl SqliteStorage {
-    pub fn new(path: &str) -> Result<Self> {
+    pub fn into_inner(self) -> Connection {
+        self.connection
+    }
+
+    pub fn open(path: &str) -> Result<Self> {
         let connection = Connection::open(path)?;
         Ok(Self { connection })
     }
@@ -17,5 +25,10 @@ impl SqliteStorage {
     pub fn in_memory() -> Result<Self> {
         let connection = Connection::open_in_memory()?;
         Ok(Self { connection })
+    }
+
+    pub fn create_tables(&self) -> Result<()> {
+        self.connection.execute_batch(crate::SCHEMA)?;
+        Ok(())
     }
 }
