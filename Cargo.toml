@@ -5,6 +5,7 @@ members = [
     "model",
     "web",
     "cli",
+    "bin",
 ]
 resolver = "2"
 

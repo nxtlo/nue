@@ -43,90 +43,131 @@ impl From<u8> for SubStatus {
 /// Thie differs from [`RawCard`] in that it includes additional fields fetched from an external resource.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NfcCard {
-    username: Arc<str>,
-    subscription_start: chrono::DateTime<chrono::Utc>,
-    subscription_expiry: chrono::DateTime<chrono::Utc>,
-    last_used: chrono::DateTime<chrono::Utc>,
     uid: CardID,
-    tier: SubTier,
-    status: SubStatus,
+    username: Arc<str>,
+    membership_id: usize,
+    subscription_status: SubStatus,
+    subscription_tier: SubTier,
+    subscription_start: Option<chrono::DateTime<chrono::Utc>>,
+    subscription_end: Option<chrono::DateTime<chrono::Utc>>,
+    last_used: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+impl TryFrom<&rusqlite::Row<'_>> for NfcCard {
+    type Error = rusqlite::Error;
+
+    /// Attempts to convert a [`rusqlite::Row`] into an [`NfcCard`].
+    fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            username: row.get("username")?,
+            uid: row.get::<_, [u8; 10]>("uid").map(Into::into)?,
+            membership_id: row.get::<_, i64>("membership_id")? as usize,
+            subscription_tier: row.get::<_, u8>("subscription_tier").map(Into::into)?,
+            subscription_status: row.get::<_, u8>("subscription_status").map(Into::into)?,
+            subscription_start: row
+                .get::<_, i64>("subscription_start")
+                .map(|t| chrono::DateTime::from_timestamp(t, 0).expect("invalid timestamp."))
+                .ok(),
+            subscription_end: row
+                .get::<_, i64>("subscription_end")
+                .map(|t| chrono::DateTime::from_timestamp(t, 0).expect("invalid timestamp."))
+                .ok(),
+            last_used: row
+                .get::<_, i64>("last_used")
+                .map(|t| chrono::DateTime::from_timestamp(t, 0).expect("invalid timestamp."))
+                .ok(),
+        })
+    }
 }
 
 impl NfcCard {
     pub fn new(
-        username: impl Into<Arc<str>>,
-        subscription_start: chrono::DateTime<chrono::Utc>,
-        subscription_expiry: chrono::DateTime<chrono::Utc>,
-        last_used: chrono::DateTime<chrono::Utc>,
         uid: CardID,
-        tier: SubTier,
-        status: SubStatus,
+        username: impl Into<Arc<str>>,
+        membership_id: usize,
+        subscription_tier: SubTier,
+        subscription_status: SubStatus,
+        subscription_start: chrono::DateTime<chrono::Utc>,
+        subscription_end: chrono::DateTime<chrono::Utc>,
+        last_used: chrono::DateTime<chrono::Utc>,
     ) -> Self {
         Self {
-            username: username.into(),
-            subscription_start,
-            subscription_expiry,
-            last_used,
+            membership_id,
             uid,
-            tier,
-            status,
+            subscription_tier,
+            subscription_status,
+            username: username.into(),
+            subscription_start: Some(subscription_start),
+            subscription_end: Some(subscription_end),
+            last_used: Some(last_used),
         }
+    }
+
+    pub const fn membership_id(&self) -> usize {
+        self.membership_id
     }
 
     pub fn username(&self) -> &str {
         &self.username
     }
 
-    pub const fn subscription_start(&self) -> &chrono::DateTime<chrono::Utc> {
-        &self.subscription_start
+    pub const fn subscription_start(&self) -> Option<&chrono::DateTime<chrono::Utc>> {
+        self.subscription_start.as_ref()
     }
 
-    pub const fn subscription_expiry(&self) -> &chrono::DateTime<chrono::Utc> {
-        &self.subscription_expiry
+    pub const fn subscription_end(&self) -> Option<&chrono::DateTime<chrono::Utc>> {
+        self.subscription_end.as_ref()
     }
 
-    pub const fn last_used(&self) -> &chrono::DateTime<chrono::Utc> {
-        &self.last_used
+    pub const fn last_used(&self) -> Option<&chrono::DateTime<chrono::Utc>> {
+        self.last_used.as_ref()
     }
 
     pub const fn uid(&self) -> CardID {
         self.uid
     }
 
-    pub const fn tier(&self) -> SubTier {
-        self.tier
+    pub const fn subscription_tier(&self) -> SubTier {
+        self.subscription_tier
     }
 
-    pub const fn status(&self) -> SubStatus {
-        self.status
+    pub const fn subscription_status(&self) -> SubStatus {
+        self.subscription_status
     }
 }
 
 pub struct NfcCardBuilder {
     username: Option<Arc<str>>,
+    membership_id: Option<usize>,
     subscription_start: Option<chrono::DateTime<chrono::Utc>>,
-    subscription_expiry: Option<chrono::DateTime<chrono::Utc>>,
+    subscription_end: Option<chrono::DateTime<chrono::Utc>>,
     last_used: Option<chrono::DateTime<chrono::Utc>>,
     uid: Option<CardID>,
-    tier: Option<SubTier>,
-    status: Option<SubStatus>,
+    subscription_tier: Option<SubTier>,
+    subscription_status: Option<SubStatus>,
 }
 
 impl NfcCardBuilder {
     pub const fn new() -> Self {
         Self {
             username: None,
+            membership_id: None,
             subscription_start: None,
-            subscription_expiry: None,
+            subscription_end: None,
             last_used: None,
             uid: None,
-            tier: None,
-            status: None,
+            subscription_tier: None,
+            subscription_status: None,
         }
     }
 
     pub fn username(mut self, username: impl Into<Arc<str>>) -> Self {
         self.username = Some(username.into());
+        self
+    }
+
+    pub const fn membership_id(mut self, membership_id: usize) -> Self {
+        self.membership_id = Some(membership_id);
         self
     }
 
@@ -137,9 +178,9 @@ impl NfcCardBuilder {
         self
     }
 
-    pub const fn expiry(mut self, expiry: isize) -> Self {
-        self.subscription_expiry = Some(
-            chrono::DateTime::from_timestamp(expiry as i64, 0).expect("invalid expiry timestamp."),
+    pub const fn end(mut self, end: isize) -> Self {
+        self.subscription_end = Some(
+            chrono::DateTime::from_timestamp(end as i64, 0).expect("invalid expiry timestamp."),
         );
         self
     }
@@ -157,13 +198,13 @@ impl NfcCardBuilder {
         self
     }
 
-    pub const fn tier(mut self, tier: SubTier) -> Self {
-        self.tier = Some(tier);
+    pub const fn subscription_tier(mut self, tier: SubTier) -> Self {
+        self.subscription_tier = Some(tier);
         self
     }
 
-    pub const fn status(mut self, status: SubStatus) -> Self {
-        self.status = Some(status);
+    pub const fn subscription_status(mut self, status: SubStatus) -> Self {
+        self.subscription_status = Some(status);
         self
     }
 
@@ -171,12 +212,13 @@ impl NfcCardBuilder {
     pub fn finish(self) -> NfcCard {
         NfcCard {
             username: self.username.unwrap_or_default(),
-            subscription_start: self.subscription_start.unwrap_or_default(),
-            subscription_expiry: self.subscription_expiry.unwrap_or_default(),
-            last_used: self.last_used.unwrap_or_default(),
+            membership_id: self.membership_id.unwrap_or_default(),
+            subscription_start: self.subscription_start,
+            subscription_end: self.subscription_end,
+            last_used: self.last_used,
             uid: self.uid.unwrap_or_else(CardID::new_zeroed),
-            tier: self.tier.unwrap_or_default(),
-            status: self.status.unwrap_or_default(),
+            subscription_tier: self.subscription_tier.unwrap_or_default(),
+            subscription_status: self.subscription_status.unwrap_or_default(),
         }
     }
 }

@@ -1,3 +1,6 @@
+#[cfg(test)]
+extern crate std;
+
 mod consts;
 pub mod iter;
 
@@ -112,14 +115,13 @@ impl<'a> App<'a> {
             _ => return Err(nue_model::Error::NfcCardUnrecognized),
         };
 
-        if let Ok(card) = self.read() {
-            self.device
-                .initiator_deselect_target()
-                .map_err(|_| nue_model::Error::NfcReadError)?;
-            return Ok((uid.into(), card));
-        }
+        let raw = self.read().map_err(|_| nue_model::Error::NfcReadError)?;
 
-        Err(nue_model::Error::NfcReadError)
+        self.device
+            .initiator_deselect_target()
+            .map_err(|_| nue_model::Error::NfcReadError)?;
+
+        return Ok((uid.into(), raw));
     }
 
     // TODO: Probably needs a re-write.
@@ -135,7 +137,12 @@ impl<'a> App<'a> {
                 .initiator_transceive_bytes(&cmd, 16, nfc1::Timeout::Default)?
                 .try_into()
                 .map_err(|_| nfc1::Error::Soft)?;
-            rx[i * 16..(i + 1) * 16].copy_from_slice(&chunk);
+
+            unsafe {
+                let dest_ptr = rx.as_mut_ptr().add(i * 16);
+                let src_ptr = chunk.as_ptr();
+                core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, 16);
+            }
         }
 
         let card = RawCard::from_bytes(&rx[..consts::CARD_SIZE]).ok_or(nfc1::Error::Soft)?;
@@ -159,7 +166,12 @@ impl<'a> App<'a> {
     // TODO: Probably needs a re-write.
     pub fn write(&mut self, card: &RawCard) -> nfc1::Result<()> {
         let mut padded = [0u8; consts::PADDED_SIZE];
-        padded[..consts::CARD_SIZE].copy_from_slice(card.as_slice());
+        unsafe {
+            let dest_ptr = padded.as_mut_ptr();
+            let src_ptr = card.as_slice().as_ptr();
+            // We need to use consts::CARD_SIZE here as that's the length of the slice
+            core::ptr::copy_nonoverlapping(src_ptr, dest_ptr, consts::CARD_SIZE);
+        }
 
         for (i, chunk) in padded.chunks_exact(consts::PAGE_SIZE).enumerate() {
             let page = consts::USER_PAGE_START + i as u8;
@@ -177,7 +189,8 @@ impl fmt::Debug for App<'_> {
     }
 }
 
-#[cfg(test)]
+// allow tests for raspberry pi only
+#[cfg(all(test, unix, target_pointer_width = "32"))]
 mod tests {
     use super::*;
 

@@ -11,4 +11,4 @@ heed = "*"
 [features]
 default = []
 alloc = []
-sqlite = ["rusqlite"]
+sqlite = ["rusqlite", "nue_model/extras"]

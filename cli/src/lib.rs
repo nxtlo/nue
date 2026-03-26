@@ -158,8 +158,8 @@ pub fn interact() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(test)]
-mod test {
+#[cfg_attr(all(windows, target_arch = "arm"), test)]
+mod tests {
     use super::*;
 
     #[test]

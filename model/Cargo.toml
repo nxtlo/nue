@@ -11,6 +11,7 @@ chacha20poly1305  = { version = "0.11.0-rc.3", default-features = false, feature
 # extras
 chrono = { version = "0.4", default-features = false, features = ["alloc", "serde"], optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive", "rc"], optional = true }
+rusqlite = { version = "0.39.0", features = ["bundled", "blob"], optional = true }
 
 [features]
-extras = ["chrono", "serde"]
+extras = ["chrono", "serde", "rusqlite"]

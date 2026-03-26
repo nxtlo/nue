@@ -1,0 +1,8 @@
+[package]
+name = "bin"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nue_storage = { path = "../storage", features = ["sqlite"] }
+nue_model = { path = "../model", features = ["extras"] }

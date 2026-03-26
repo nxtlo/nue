@@ -20,29 +20,6 @@ impl From<[u8; 10]> for CardID {
     }
 }
 
-#[cfg(feature = "extras")]
-impl serde::Serialize for CardID {
-    #[inline]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_bytes(&self.0)
-    }
-}
-
-#[cfg(feature = "extras")]
-impl<'de> serde::Deserialize<'de> for CardID {
-    #[inline]
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let bytes = serde::Deserialize::deserialize(deserializer)?;
-        Ok(Self(bytes))
-    }
-}
-
 impl CardID {
     /// Get a view of the underlying card ID bytes as a string slice.
     #[inline]
@@ -102,6 +79,11 @@ impl RawCard {
         }
     }
 
+    #[inline]
+    pub const fn as_ptr(&self) -> *const u8 {
+        self as *const Self as *const u8
+    }
+
     /// Returns this card as bytes, This can then be reconstructed from bytes using [`RawCard::from_bytes`].
     #[inline]
     pub fn as_slice(&self) -> &[u8] {
@@ -125,5 +107,28 @@ impl AsRef<[u8]> for CardID {
 impl fmt::Display for CardID {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.pad(self.as_str())
+    }
+}
+
+#[cfg(feature = "extras")]
+impl serde::Serialize for CardID {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_bytes(&self.0)
+    }
+}
+
+#[cfg(feature = "extras")]
+impl<'de> serde::Deserialize<'de> for CardID {
+    #[inline]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let bytes = serde::Deserialize::deserialize(deserializer)?;
+        Ok(Self(bytes))
     }
 }

@@ -6,8 +6,9 @@ use alloc::collections::BTreeSet;
 
 use core::borrow::Borrow;
 
-use crate::Storage;
+use crate::RawStorage;
 
+#[derive(Clone, Debug)]
 pub struct LmdbStorage {
     env: Env,
     db: Database<types::Bytes, types::Bytes>,
@@ -48,7 +49,7 @@ impl LmdbStorage {
     }
 }
 
-impl Storage for LmdbStorage {
+impl RawStorage for LmdbStorage {
     type CardID = dyn Borrow<[u8]>;
 
     #[cfg(feature = "alloc")]
@@ -132,8 +133,8 @@ mod tests {
     use nue_model::{auth::Token, raw_card::RawCard};
 
     use super::LmdbStorage;
+    use crate::RawStorage;
     use crate::Result;
-    use crate::Storage;
 
     #[test]
     fn test_put_and_get() -> Result<()> {

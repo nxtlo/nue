@@ -6,6 +6,8 @@ use core::{
 
 use alloc::string::ToString;
 
+pub type Result<T> = core::result::Result<T, Error>;
+
 /// Possible error types which may occur in NFC card operations, HTTP requests, and database operations.
 #[derive(Debug)]
 pub enum Error {
@@ -27,11 +29,14 @@ pub enum Error {
     // General Errors.
     ByteFillError(getrandom::Error),
     ConvertError(TryFromSliceError),
+    #[cfg(feature = "extras")]
+    RusqliteError(rusqlite::Error),
 }
 
 impl From<chacha20poly1305::Error> for Error {
     fn from(e: chacha20poly1305::Error) -> Self {
         let src = e.to_string();
+        // TODO: actually handle this lol.
         if src.contains("encrypt") {
             Error::CardEncryptionError
         } else {
@@ -52,18 +57,14 @@ impl From<getrandom::Error> for Error {
     }
 }
 
-impl From<core::convert::Infallible> for Error {
-    fn from(e: core::convert::Infallible) -> Self {
-        match e {}
+#[cfg(feature = "extras")]
+impl From<rusqlite::Error> for Error {
+    fn from(e: rusqlite::Error) -> Self {
+        Error::RusqliteError(e)
     }
 }
 
-pub type Result<T> = core::result::Result<T, Error>;
-
 impl StdError for Error {}
-
-unsafe impl Send for Error {}
-unsafe impl Sync for Error {}
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -80,6 +81,8 @@ impl Display for Error {
             Error::DBError => write!(f, "Database storage error"),
             Error::ByteFillError(e) => write!(f, "Failed to fill bytes: {}", e),
             Error::ConvertError(e) => write!(f, "Failed to convert: {}", e),
+            #[cfg(feature = "extras")]
+            Error::RusqliteError(e) => write!(f, "Rusqlite error: {}", e),
         }
     }
 }
