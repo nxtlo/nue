@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 nue_storage = { path = "../storage", features = ["sqlite"] }
 nue_model = { path = "../model", features = ["extras"] }
+nue_web = { path = "../web" }
