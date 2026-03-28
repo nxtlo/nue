@@ -40,7 +40,6 @@ use core::borrow::Borrow;
 use nue_model::{error::Result, raw_card::RawCard};
 
 /// A trait for storage backends that can store `RawCard` NFC cards.
-// TODO: Split this into Storage and RawStorage, corrosponding to NfcCard and RawCard respectively.
 pub trait RawStorage {
     /// The type of the list of card IDs returned by [`list`].
     type List;

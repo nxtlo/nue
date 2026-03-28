@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 nue_model = { path = "../model", features = ["extras"] }
 nue_storage = { path = "../storage", features = ["sqlite"] }
+
+smol = { version = "2.0.2", default-features = false }

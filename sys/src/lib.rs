@@ -97,11 +97,7 @@ impl<'a> App<'a> {
         &mut self,
         modulation: Option<nfc1::Modulation>,
     ) -> nue_model::Result<(CardID, RawCard)> {
-        let modulation = if let Some(modulation) = modulation {
-            modulation
-        } else {
-            consts::MODULATIONS[0]
-        };
+        let modulation = modulation.unwrap_or(consts::MODULATIONS[0]);
 
         // Scan for a card.
         let target = self
